@@ -1,34 +1,41 @@
-/*
- * @Description: 拖拽进入组件
- * @Date: 2021-11-17 14:40:29
- * @LastEditTime: 2021-11-18 18:32:25
- * @FilePath: \dragInto\src\dragInto.js
- */
+import { Emitter } from './emitter'
+import {DRAG_START, DRAG_END, DRAG_ENTER, DRAG_LEAVE, BEFORE_ENTER} from './events'
 
-export class DragInto {
-  constructor(currnetElement, targetElement, options) {
-    this.currnetElement = currnetElement
+class DragInto {
+  constructor({ id, currentElement, targetElement, data, options, emit }) {
+    this.id = id
+    this.currentElement = currentElement
     this.targetElement = targetElement
-
+    this.data = data
     this.options = options
+
+    this.emit = emit
 
     this.initEvents()
   }
 
-  initData() {
-    this.dragging = false
-    this.enter = false
-    this.enterElement
+  get dragEventArgs() {
+    return {
+      id: this.id,
+      current: this.currentElement,
+      target: this.targetElement,
+      data: this.data
+    }
   }
 
   initEvents() {
-    this.currnetElement.setAttribute('draggable', true)
+    this.currentElement.setAttribute('draggable', true)
+    this.currentElement.style.cursor = 'move'
 
-    this.currnetElement.addEventListener(
+    this.currentElement.addEventListener(
       'dragstart',
       this.currentDragStart.bind(this)
     )
-    this.currnetElement.addEventListener('dragend', this.initData.bind(this))
+    this.currentElement.addEventListener(
+      'dragend',
+      this.targetDragEnd.bind(this)
+    )
+
     this.targetElement.addEventListener(
       'dragover',
       this.targetDragOver.bind(this)
@@ -40,29 +47,58 @@ export class DragInto {
   }
 
   currentDragStart() {
-    this.initData()
-
     this.dragging = true
+    this.emit(`${this.id}:${DRAG_START}`, this.dragEventArgs)
   }
 
   targetDragOver(e) {
     e.preventDefault()
-    if (!this.enter) {
+
+    const appendChild = flag => {
+      flag === undefined && (flag = true)
+      if (flag) {
+        const newElement = this.cloneElement(this.currentElement)
+        this.enterElement = newElement
+        if (!this.hasCurrentElement()) {
+          this.targetElement.appendChild(newElement)
+          this.emit(`${this.id}:${DRAG_ENTER}`, this.dragEventArgs)
+        }
+      }
       this.enter = true
-      const newElement = this.cloneElement(this.currnetElement)
-      this.enterElement = newElement
-      if (!this.hasCurrentElement()) {
-        this.targetElement.appendChild(newElement)
+      this.executeBeforeEnter = true
+    }
+
+    if (!this.enter && this.dragging && !this.executeBeforeEnter) {
+      this.emit(`${this.id}:${BEFORE_ENTER}`, {
+        next: appendChild.bind(this),
+        ...this.dragEventArgs
+      })
+      if (this.executeBeforeEnter) {
+        return
+      } else {
+        appendChild(true)
       }
     }
   }
 
   targetDragleave() {
-    this.enter = false
-    if (this.hasCurrentElement()) {
-      this.targetElement.removeChild(this.enterElement)
-      this.enterElement = null
+    if (this.enter && this.executeBeforeEnter) {
+      if (this.hasCurrentElement()) {
+        this.targetElement.removeChild(this.enterElement)
+        this.enterElement = null
+      }
+      this.executeBeforeEnter = false
+      this.enter = false
+      this.emit(`${this.id}:${DRAG_LEAVE}`, this.dragEventArgs)
     }
+  }
+
+  targetDragEnd() {
+    this.emit(`${this.id}:${DRAG_END}`, this.enter, this.dragEventArgs)
+    this.dragging = false
+    this.executeBeforeEnter = false
+    this.enter = false
+    this.enterElement = null
   }
 
   cloneElement(element) {
@@ -77,9 +113,52 @@ export class DragInto {
   hasCurrentElement() {
     return Array.from(this.targetElement.children).some(child => {
       return (
-        child.localName === this.currnetElement.localName &&
-        child.innerHTML === this.currnetElement.innerHTML
+        child.localName === this.currentElement.localName &&
+        child.innerHTML === this.currentElement.innerHTML
       )
     })
   }
 }
+class DragControl extends Emitter {
+  constructor(options) {
+    super()
+    this.dragEventsMap = new Map()
+    this.options = options
+    this.count = 1
+  }
+
+  addDrag({ currentElement, targetElement, data, options }) {
+    const id = `drag${this.count++}`
+    this.dragEventsMap.set(
+      id,
+      new DragInto({
+        id,
+        currentElement,
+        targetElement,
+        data,
+        options: options ?? this.options,
+        emit: this.emit.bind(this)
+      })
+    )
+
+    return id
+  }
+
+  cleanDragEvents() {
+    this.dragEventsMap.clear()
+    this.events.clear()
+    this.eventsCaches.clear()
+    this.count = 1
+  }
+
+  get dragCount() {
+    return this.count
+  }
+}
+
+export const Dragger = (function() {
+  let dragger
+  return function() {
+    return dragger || (dragger = new DragControl())
+  }
+})()

@@ -1,0 +1,5 @@
+export const DRAG_START = 'start'
+export const DRAG_ENTER = 'enter'
+export const DRAG_LEAVE = 'leave'
+export const DRAG_END = 'end'
+export const BEFORE_ENTER = 'before:enter'
